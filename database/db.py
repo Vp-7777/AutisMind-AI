@@ -1,12 +1,15 @@
 import os
 from pymongo import MongoClient
-from dotenv import load_dotenv
-
-load_dotenv()
 
 MONGO_URL = os.getenv("MONGO_URL")
 
-client = MongoClient(MONGO_URL)
-
-db = client["autism_db"]
-collection = db["screenings"]
+if not MONGO_URL:
+    print("⚠️ MONGO_URL not found")
+    client = None
+else:
+    try:
+        client = MongoClient(MONGO_URL)
+        print("✅ MongoDB Connected")
+    except Exception as e:
+        print("❌ MongoDB Connection Failed:", e)
+        client = None
