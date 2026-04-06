@@ -1,5 +1,5 @@
 """
-AutisMind AI — FastAPI entrypoint for the autism screening teaching backend.
+AutisMind AI — FastAPI entrypoint for the autism screening backend.
 
 Run locally (from this `backend` folder):
 
@@ -8,10 +8,17 @@ Run locally (from this `backend` folder):
 Interactive docs: http://127.0.0.1:8000/docs
 """
 
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from routes.api import router as screening_router
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+)
 
 app = FastAPI(
     title="AutisMind AI Screening API",

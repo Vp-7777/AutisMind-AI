@@ -168,3 +168,26 @@ def recommend_therapy_plan(module_scores: dict[str, float]) -> list[str]:
 
     # Keep the response compact for UI and oral exams.
     return [_LABELS[n] for n in ordered_nodes[:3]]
+
+
+def recommend_therapy_plan_from_path(
+    module_scores: dict[str, float], path: list[str]
+) -> list[str]:
+    """
+    Optimized helper when caller already executed A*.
+
+    This avoids running A* a second time in the pipeline and keeps response latency
+    lower on cold-start constrained environments.
+    """
+    neighbors, cost_fn = _build_graph(module_scores)
+    all_therapy_nodes = list(neighbors[START])
+    primary = next((n for n in path if n in _LABELS), None)
+    ranked_by_cost = sorted(all_therapy_nodes, key=lambda n: cost_fn(START, n))
+
+    ordered_nodes: list[str] = []
+    if primary is not None:
+        ordered_nodes.append(primary)
+    for n in ranked_by_cost:
+        if n not in ordered_nodes:
+            ordered_nodes.append(n)
+    return [_LABELS[n] for n in ordered_nodes[:3]]

@@ -147,7 +147,7 @@ def schedule_therapies_csp(
 
     if solution is None:
         # Fallback: simple sequential mapping if constraints over-constrain tiny inputs.
-        return [f"{slot}: {pool[i]}" for i, slot in enumerate(SLOT_VARS)]
+        return [f"{slot.replace('_', ' ')}: {pool[i]}" for i, slot in enumerate(SLOT_VARS)]
 
     lines: list[str] = []
     for slot in SLOT_VARS:

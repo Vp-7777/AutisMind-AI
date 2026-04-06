@@ -4,21 +4,23 @@ API contracts (input/output shapes).
 These match the screening questionnaire fields and the unified analysis response.
 """
 
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 
 class AnalyzeRequest(BaseModel):
-    """Raw observational scores from the screening UI (typically 0–10 scale)."""
+    """Raw observational scores from the screening UI on a strict 0–100 range."""
 
-    eye_contact: float = Field(..., ge=0, description="Observed eye contact quality/frequency")
-    name_response: float = Field(..., ge=0, description="Response when name is called")
-    vocalization: float = Field(..., ge=0, description="Appropriate vocal communication")
-    gestures: float = Field(..., ge=0, description="Use of gestures / nonverbal cues")
+    eye_contact: float = Field(..., ge=0, le=100, description="Observed eye contact quality/frequency")
+    name_response: float = Field(..., ge=0, le=100, description="Response when name is called")
+    vocalization: float = Field(..., ge=0, le=100, description="Appropriate vocal communication")
+    gestures: float = Field(..., ge=0, le=100, description="Use of gestures / nonverbal cues")
     repetitive_behavior: float = Field(
         ...,
         ge=0,
+        le=100,
         description="Repetitive or restricted behaviors (higher = more concern)",
     )
 
@@ -44,3 +46,13 @@ class AnalyzeResponse(BaseModel):
     module_scores: ModuleScores
     explanation: str
     therapy_plan: list[str]
+    created_at: datetime
+
+
+class HistorySession(BaseModel):
+    """Compact session row returned by GET /api/history."""
+
+    session_id: str
+    risk_score: float = Field(..., ge=0, le=100)
+    risk_band: Literal["low", "moderate", "high"]
+    created_at: datetime

@@ -7,8 +7,8 @@ HTTP endpoints required by the project brief.
 
 from fastapi import APIRouter, HTTPException
 
-from database.store import get_result, save_result
-from models.schemas import AnalyzeRequest, AnalyzeResponse
+from database.mongodb import get_result, list_results, save_result
+from models.schemas import AnalyzeRequest, AnalyzeResponse, HistorySession
 from .screening_pipeline import run_screening
 
 router = APIRouter(tags=["screening"])
@@ -22,14 +22,30 @@ def analyze_screening(payload: AnalyzeRequest) -> AnalyzeResponse:
     The heavy lifting lives in `services/screening.py` so this file stays thin and readable.
     """
     result = run_screening(payload)
-    save_result(result.session_id, result.model_dump())
+    try:
+        save_result(result.session_id, result.model_dump())
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     return result
 
 
 @router.get("/results/{session_id}", response_model=AnalyzeResponse)
 def read_screening_result(session_id: str) -> AnalyzeResponse:
     """Look up a saved session produced by POST /api/analyze."""
-    stored = get_result(session_id)
+    try:
+        stored = get_result(session_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     if stored is None:
         raise HTTPException(status_code=404, detail="Session not found")
     return AnalyzeResponse(**stored)
+
+
+@router.get("/history", response_model=list[HistorySession])
+def read_history() -> list[HistorySession]:
+    """Return previously analyzed sessions in reverse chronological order."""
+    try:
+        rows = list_results()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return [HistorySession(**row) for row in rows]

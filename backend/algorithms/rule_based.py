@@ -25,7 +25,10 @@ No external rule engines are used: all logic is plain Python so it is easy to re
 
 from __future__ import annotations
 
+import logging
 from typing import TypedDict
+
+logger = logging.getLogger(__name__)
 
 
 class RuleBasedResult(TypedDict):
@@ -37,19 +40,6 @@ class RuleBasedResult(TypedDict):
 def _clamp(value: float, low: float, high: float) -> float:
     """Keep numeric inputs inside a safe range for scoring."""
     return max(low, min(high, value))
-
-
-def _scale_observation(raw: float) -> float:
-    """
-    Map a questionnaire value into [0, 10].
-
-    If the UI already uses 0–10, this mostly passes through.
-    If someone sends 0–100 by mistake, we gently compress it.
-    """
-    raw = _clamp(raw, 0.0, 100.0)
-    if raw <= 10.0:
-        return raw
-    return raw / 10.0
 
 
 def compute_risk_and_modules(
@@ -71,18 +61,19 @@ def compute_risk_and_modules(
     The overall risk_score is a weighted concern index derived from (100 - alignment)
     per module, so higher risk means more areas look atypical on this screening snapshot.
     """
-    ec = _scale_observation(eye_contact)
-    nr = _scale_observation(name_response)
-    vo = _scale_observation(vocalization)
-    ge = _scale_observation(gestures)
-    rb = _scale_observation(repetitive_behavior)
+    # API contract is strict 0-100, but clamp again for safety if this function is reused.
+    ec = _clamp(eye_contact, 0.0, 100.0)
+    nr = _clamp(name_response, 0.0, 100.0)
+    vo = _clamp(vocalization, 0.0, 100.0)
+    ge = _clamp(gestures, 0.0, 100.0)
+    rb = _clamp(repetitive_behavior, 0.0, 100.0)
 
-    # Alignment 0–100: higher is "more typical / stronger skill" on that construct.
-    social_attention = ((ec + nr) / 2.0) * 10.0
-    communication = ((vo + nr) / 2.0) * 10.0
-    motor_expression = ge * 10.0
-    # Repetitive behavior: higher score on the form means *more* repetition → lower regulation alignment.
-    behavioral_regulation = (10.0 - rb) * 10.0
+    # Module values are normalized to 0-100 where higher means stronger positive behavior.
+    social_attention = (ec + nr) / 2.0
+    communication = (vo + nr) / 2.0
+    motor_expression = ge
+    # Keep this as "positive alignment" for UI modules.
+    behavioral_regulation = 100.0 - rb
 
     module_scores = {
         "social_attention": round(_clamp(social_attention, 0.0, 100.0), 2),
@@ -91,12 +82,33 @@ def compute_risk_and_modules(
         "behavioral_regulation": round(_clamp(behavioral_regulation, 0.0, 100.0), 2),
     }
 
-    # Concern per module = gap from ideal alignment (100).
-    concerns = [100.0 - v for v in module_scores.values()]
-    # Slightly emphasize communication + social attention (common screening focus).
-    weights = [0.30, 0.30, 0.20, 0.20]
-    risk_score = sum(c * w for c, w in zip(concerns, weights, strict=True))
+    # Proper gap-based scoring:
+    # - Positive behaviors -> gap = 100 - value
+    # - Repetitive behavior -> gap = value (already concerning when high)
+    social_gap = 100.0 - module_scores["social_attention"]
+    comm_gap = 100.0 - module_scores["communication"]
+    motor_gap = 100.0 - module_scores["motor_expression"]
+    behavior_gap = rb
+
+    weights = {"social_attention": 0.30, "communication": 0.30, "motor_expression": 0.20, "behavioral_regulation": 0.20}
+    risk_score = (
+        social_gap * weights["social_attention"]
+        + comm_gap * weights["communication"]
+        + motor_gap * weights["motor_expression"]
+        + behavior_gap * weights["behavioral_regulation"]
+    )
     risk_score = round(_clamp(risk_score, 0.0, 100.0), 2)
+
+    logger.info(
+        "risk_scoring social_gap=%.2f comm_gap=%.2f motor_gap=%.2f behavior_gap=%.2f "
+        "weights=%s risk_score=%.2f",
+        social_gap,
+        comm_gap,
+        motor_gap,
+        behavior_gap,
+        weights,
+        risk_score,
+    )
 
     if risk_score < 35.0:
         band = "low"

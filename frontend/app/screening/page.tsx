@@ -30,7 +30,7 @@
  * - See lib/api.ts for detailed documentation
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
@@ -189,6 +189,8 @@ export default function ScreeningPage() {
   
   /** Error message to display if submission fails */
   const [error, setError] = useState<string | null>(null);
+  const isSubmittingRef = useRef(false);
+  const lastSubmitAtRef = useRef(0);
   
   /**
    * User responses state
@@ -316,6 +318,13 @@ export default function ScreeningPage() {
    * - CSP: Validates screening constraints are met
    */
   const handleSubmit = async () => {
+    const now = Date.now();
+    if (isSubmittingRef.current || now - lastSubmitAtRef.current < 800) {
+      return;
+    }
+    lastSubmitAtRef.current = now;
+    isSubmittingRef.current = true;
+
     // Reset error state and set loading
     setError(null);
     setIsSubmitting(true);
@@ -344,39 +353,15 @@ export default function ScreeningPage() {
       // STEP 2: Submit to backend API
       // ========================================
       
-      let result: ScreeningResult;
-      
-      try {
-        /**
-         * API CALL: POST /api/analyze
-         * 
-         * Sends numeric screening data to backend.
-         * Backend processes using A*, BFS, CSP algorithms.
-         * Returns risk assessment and recommendations.
-         */
-        result = await submitScreening(payload);
-        
-        console.log("[Screening] API response received:", result.session_id);
-        
-      } catch (apiError) {
-        /**
-         * FALLBACK: Backend not available
-         * 
-         * During development or if backend is down, we store
-         * the raw responses for the results page to process.
-         * 
-         * TODO: Remove this fallback in production
-         */
-        console.warn("[Screening] Backend unavailable, using fallback storage");
-        
-        // Store responses for fallback processing
-        sessionStorage.setItem("screeningResponses", JSON.stringify(responses));
-        sessionStorage.setItem("screeningPayload", JSON.stringify(payload));
-        
-        // Navigate to results (will use fallback logic)
-        router.push("/results");
-        return;
-      }
+      /**
+       * API CALL: POST /api/analyze
+       *
+       * Sends numeric screening data to backend.
+       * Backend processes using A*, BFS, CSP algorithms.
+       * Returns risk assessment and recommendations.
+       */
+      const result: ScreeningResult = await submitScreening(payload);
+      console.log("[Screening] API response received:", result.session_id);
 
       // ========================================
       // STEP 3: Store results for results page
@@ -386,13 +371,9 @@ export default function ScreeningPage() {
        * Store session data for cross-page access.
        * 
        * session_id: Used to fetch full results from API
-       * screeningResult: Backup in case API fetch fails
-       * 
-       * In production, results would be fetched fresh from API
-       * using the session_id, ensuring data consistency.
+       * The results page always fetches live data from backend by session_id.
        */
       sessionStorage.setItem("session_id", result.session_id);
-      sessionStorage.setItem("screeningResult", JSON.stringify(result));
       
       console.log("[Screening] Results stored, navigating to results page");
 
@@ -414,6 +395,7 @@ export default function ScreeningPage() {
     } finally {
       // Always reset loading state
       setIsSubmitting(false);
+      isSubmittingRef.current = false;
     }
   };
 
@@ -541,7 +523,7 @@ export default function ScreeningPage() {
                         {isSubmitting ? (
                           <>
                             <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                            Processing...
+                            Analyzing with AI...
                           </>
                         ) : (
                           <>

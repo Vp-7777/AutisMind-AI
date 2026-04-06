@@ -38,11 +38,12 @@
  * All fallback scoring is temporary for development purposes only.
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Header } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
-import { RiskBadge, RiskLevel } from "@/components/results/risk-badge";
+import { RiskBadge } from "@/components/results/risk-badge";
 import { ModuleScoreCard } from "@/components/results/module-score-card";
 import { LoadingState } from "@/components/ui/loading-state";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -60,15 +61,13 @@ import {
   FileText,
   ClipboardList,
   RefreshCw,
+  Clock3,
 } from "lucide-react";
 
 // Import API functions
 import { 
   getResults, 
   type ScreeningResult,
-  mapNameResponse,
-  mapVocalization,
-  mapRepetitiveBehavior,
 } from "@/lib/api";
 
 // =============================================================================
@@ -222,135 +221,16 @@ const MODULE_CONFIG = [
   },
 ];
 
-// =============================================================================
-// FALLBACK FUNCTIONS (Development Only)
-// =============================================================================
-
-/**
- * generateFallbackExplanation
- * 
- * Generates an explanation when backend is unavailable.
- * 
- * NOTE: In production, this explanation comes from the backend AI.
- * This is a temporary fallback for development/demo purposes.
- * 
- * @param riskBand - The calculated risk level
- * @returns string - Human-readable explanation
- */
-function generateFallbackExplanation(riskBand: RiskLevel): string {
-  const explanations: Record<RiskLevel, string> = {
-    low: "Based on the screening responses, the assessed individual shows typical developmental patterns in most areas. The behaviors observed are generally consistent with neurotypical development. However, continue monitoring and consult with a healthcare provider if you have any concerns.",
-    moderate: "The screening indicates some areas that may benefit from further evaluation. While some behaviors fall within typical ranges, others suggest potential developmental differences that warrant professional assessment. We recommend scheduling a comprehensive evaluation with a developmental pediatrician or child psychologist.",
-    high: "The screening results suggest several areas of concern that strongly indicate the need for immediate professional evaluation. Multiple behavioral indicators point to potential developmental differences. Please schedule an appointment with a qualified healthcare professional as soon as possible for comprehensive diagnostic assessment.",
-  };
-  return explanations[riskBand];
-}
-
-/**
- * generateFallbackTherapyPlan
- * 
- * Generates recommended actions when backend is unavailable.
- * 
- * NOTE: In production, recommendations come from the backend.
- * The backend uses CSP algorithms to generate personalized plans.
- * 
- * @param riskBand - The calculated risk level
- * @returns string[] - Array of recommended actions
- */
-function generateFallbackTherapyPlan(riskBand: RiskLevel): string[] {
-  const plans: Record<RiskLevel, string[]> = {
-    low: [
-      "Continue regular developmental monitoring",
-      "Maintain enriching social interactions",
-      "Schedule routine pediatric check-ups",
-      "Stay informed about developmental milestones",
-    ],
-    moderate: [
-      "Schedule evaluation with developmental specialist",
-      "Consider speech-language assessment",
-      "Explore early intervention programs",
-      "Join parent support groups for additional resources",
-      "Document behaviors for healthcare providers",
-    ],
-    high: [
-      "Urgent: Schedule comprehensive diagnostic evaluation",
-      "Request referral to developmental pediatrician",
-      "Explore Applied Behavior Analysis (ABA) therapy options",
-      "Consider occupational therapy assessment",
-      "Look into speech therapy services",
-      "Research Individualized Education Program (IEP) options",
-      "Connect with autism support organizations",
-    ],
-  };
-  return plans[riskBand];
-}
-
-/**
- * processFallbackResults
- * 
- * Creates mock results when backend is unavailable.
- * Uses stored screening responses to generate approximate scores.
- * 
- * IMPORTANT: This is for DEVELOPMENT/DEMO only!
- * In production, ALL scoring must come from the backend algorithms.
- * The frontend should NOT make diagnostic calculations.
- * 
- * @param storedResponses - Raw responses from sessionStorage
- * @returns ResultsData - Mock results object
- */
-function processFallbackResults(storedResponses: string): ResultsData {
-  const responses = JSON.parse(storedResponses);
-  
-  // Convert string responses to numeric scores
-  const eyeScore = responses.eye_contact || 50;
-  const gestureScore = responses.gestures || 50;
-  const nameScore = mapNameResponse(responses.response_to_name);
-  const vocalScore = mapVocalization(responses.vocalization);
-  const behaviorScore = mapRepetitiveBehavior(responses.repetitive_behavior);
-  
-  /**
-   * FALLBACK RISK CALCULATION
-   * 
-   * This is a SIMPLIFIED placeholder calculation.
-   * The real backend uses sophisticated ML algorithms:
-   * - A* for optimal decision paths
-   * - BFS for symptom relationship graphs
-   * - CSP for constraint validation
-   * 
-   * DO NOT use this logic for actual screening!
-   */
-  
-  // Calculate average of positive indicators (higher = more typical)
-  const positiveIndicators = (eyeScore + gestureScore + nameScore + vocalScore) / 4;
-  
-  // Combine with repetitive behavior (higher behavior score = more concerning)
-  const riskScore = Math.round((100 - positiveIndicators + behaviorScore) / 2);
-  
-  // Determine risk band based on score
-  let riskBand: RiskLevel;
-  if (riskScore < 35) {
-    riskBand = "low";
-  } else if (riskScore < 65) {
-    riskBand = "moderate";
-  } else {
-    riskBand = "high";
-  }
-  
-  return {
-    session_id: `fallback_${Date.now()}`,
-    risk_score: riskScore,
-    risk_band: riskBand,
-    module_scores: {
-      eye_contact: eyeScore,
-      response_to_name: nameScore,
-      vocalization: vocalScore,
-      gestures: gestureScore,
-      repetitive_behavior: 100 - behaviorScore, // Invert for display (higher = better)
-    },
-    explanation: generateFallbackExplanation(riskBand),
-    therapy_plan: generateFallbackTherapyPlan(riskBand),
-    created_at: new Date().toISOString(),
-  };
+function normalizeTherapyPlan(plan: string[]): Array<{ label: string; detail: string }> {
+  const fallback = ["Early Week", "Mid Week", "Late Week"];
+  return [0, 1, 2].map((idx) => {
+    const raw = plan[idx] ?? "";
+    const [, ...rest] = raw.split(":");
+    return {
+      label: fallback[idx],
+      detail: rest.length > 0 ? rest.join(":").trim() : raw || "No plan provided",
+    };
+  });
 }
 
 // =============================================================================
@@ -385,115 +265,29 @@ export default function ResultsPage() {
   
   /** Human-readable error message */
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const [animatedRisk, setAnimatedRisk] = useState(0);
+  const inFlightRef = useRef(false);
+  const searchParams = useSearchParams();
+  const sessionFromQuery = searchParams.get("session");
+  const sessionId = sessionFromQuery || (typeof window !== "undefined" ? sessionStorage.getItem("session_id") : null);
 
-  // ==========================================================================
-  // DATA LOADING
-  // ==========================================================================
-  
-  /**
-   * loadResults
-   * 
-   * Fetches screening results from backend or falls back to stored data.
-   * 
-   * PROCESS:
-   * 1. Check for session_id in sessionStorage
-   * 2. Try to fetch from backend API
-   * 3. If API fails, check for stored results
-   * 4. If no stored results, check for raw responses
-   * 5. If nothing found, show empty state
-   */
-  const loadResults = useCallback(async () => {
+  const loadResults = async () => {
+    if (inFlightRef.current) {
+      return;
+    }
+    inFlightRef.current = true;
     setIsLoading(true);
     setError(null);
     setErrorMessage("");
 
     try {
-      // ========================================
-      // STEP 1: Check for session_id
-      // ========================================
-      
-      const sessionId = sessionStorage.getItem("session_id");
-      
-      console.log("[Results] Loading results, session_id:", sessionId);
-
-      // ========================================
-      // STEP 2: Try to fetch from backend API
-      // ========================================
-      
-      if (sessionId) {
-        try {
-          /**
-           * API CALL: GET /api/results/{session_id}
-           * 
-           * Fetches complete results from backend.
-           * Results include ML-generated scores, explanation, and recommendations.
-           */
-          const apiResults = await getResults(sessionId);
-          
-          console.log("[Results] API fetch successful:", apiResults.session_id);
-          
-          setResults(normalizeScreeningResultForUi(apiResults));
-          setIsLoading(false);
-          return;
-          
-        } catch (apiError) {
-          console.warn("[Results] API fetch failed, trying fallback:", apiError);
-          // Continue to fallback logic below
-        }
-      }
-
-      // ========================================
-      // STEP 3: Check for stored results (backup)
-      // ========================================
-      
-      const storedResult = sessionStorage.getItem("screeningResult");
-      
-      if (storedResult) {
-        console.log("[Results] Using stored results");
-        
-        const parsedResult = JSON.parse(storedResult) as ScreeningResult;
-        setResults(normalizeScreeningResultForUi(parsedResult));
-        setIsLoading(false);
+      if (!sessionId) {
+        setError("no_data");
         return;
       }
-
-      // ========================================
-      // STEP 4: Check for raw responses (fallback)
-      // ========================================
-      
-      const storedResponses = sessionStorage.getItem("screeningResponses");
-      
-      if (storedResponses) {
-        console.log("[Results] Processing fallback from stored responses");
-        
-        /**
-         * FALLBACK PROCESSING
-         * 
-         * This processes raw responses when backend is unavailable.
-         * Used during development or if API is down.
-         * 
-         * WARNING: This is NOT for production use!
-         * Real screening must use backend ML algorithms.
-         */
-        const fallbackResults = processFallbackResults(storedResponses);
-        
-        setResults(normalizeScreeningResultForUi(fallbackResults));
-        setIsLoading(false);
-        return;
-      }
-
-      // ========================================
-      // STEP 5: No data found - show empty state
-      // ========================================
-      
-      console.log("[Results] No screening data found");
-      
-      setError("no_data");
-      
+      const apiResults = await getResults(sessionId);
+      setResults(normalizeScreeningResultForUi(apiResults));
     } catch (err) {
-      // Handle unexpected errors
-      console.error("[Results] Unexpected error loading results:", err);
-      
       setError("api_error");
       setErrorMessage(
         err instanceof Error 
@@ -501,14 +295,26 @@ export default function ResultsPage() {
           : "An unexpected error occurred while loading results."
       );
     } finally {
+      inFlightRef.current = false;
       setIsLoading(false);
     }
-  }, []);
+  };
 
-  // Load results on component mount
   useEffect(() => {
+    if (sessionFromQuery) {
+      sessionStorage.setItem("session_id", sessionFromQuery);
+    }
     loadResults();
-  }, [loadResults]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionFromQuery]);
+
+  useEffect(() => {
+    if (!results) return;
+    const id = window.setTimeout(() => setAnimatedRisk(results.risk_score), 80);
+    return () => window.clearTimeout(id);
+  }, [results]);
+
+  const timeline = useMemo(() => normalizeTherapyPlan(results?.therapy_plan ?? []), [results?.therapy_plan]);
 
   // ==========================================================================
   // RENDER: Loading State
@@ -637,7 +443,7 @@ export default function ResultsPage() {
                   <div className="flex items-center gap-8">
                     {/* Large Score Display */}
                     <div className="text-center">
-                      <div className="text-5xl font-bold text-foreground">
+                      <div className="text-5xl font-bold text-foreground tabular-nums">
                         {results.risk_score}%
                       </div>
                       <p className="text-sm text-muted-foreground mt-1">
@@ -653,14 +459,14 @@ export default function ResultsPage() {
                       </div>
                       <div className="relative h-4 rounded-full bg-muted overflow-hidden">
                         <div
-                          className={`h-full rounded-full transition-all ${
+                          className={`h-full rounded-full transition-all duration-700 ${
                             results.risk_band === "low"
                               ? "bg-success"
                               : results.risk_band === "moderate"
                               ? "bg-warning"
                               : "bg-destructive"
                           }`}
-                          style={{ width: `${results.risk_score}%` }}
+                          style={{ width: `${animatedRisk}%` }}
                         />
                       </div>
                     </div>
@@ -731,18 +537,22 @@ export default function ResultsPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <ul className="space-y-3">
-                    {results.therapy_plan.map((step, index) => (
-                      <li key={index} className="flex items-start gap-3">
-                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">
-                          {index + 1}
+                  <ol className="space-y-5">
+                    {timeline.map((item, index) => (
+                      <li key={item.label} className="relative pl-8">
+                        {index < timeline.length - 1 ? (
+                          <span className="absolute left-[11px] top-6 h-8 w-px bg-border" />
+                        ) : null}
+                        <span className="absolute left-0 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary">
+                          <Clock3 className="h-3.5 w-3.5" />
                         </span>
-                        <span className="text-sm text-muted-foreground">
-                          {step}
-                        </span>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                          {item.label}
+                        </p>
+                        <p className="text-sm text-foreground">{item.detail}</p>
                       </li>
                     ))}
-                  </ul>
+                  </ol>
                 </CardContent>
               </Card>
 

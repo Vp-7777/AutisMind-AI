@@ -11,8 +11,9 @@ Execution order (easy to narrate in a viva):
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
-from algorithms.a_star_therapy import recommend_therapy_plan, run_a_star
+from algorithms.a_star_therapy import recommend_therapy_plan_from_path, run_a_star
 from algorithms.bfs_symptom import analyze_symptoms_bfs, format_bfs_explanation
 from algorithms.csp_schedule import schedule_therapies_csp
 from algorithms.rule_based import compute_risk_and_modules
@@ -43,7 +44,7 @@ def run_screening(payload: AnalyzeRequest) -> AnalyzeResponse:
 
     module_scores_dict = rule["module_scores"]
     astar_path, astar_cost = run_a_star(module_scores_dict)
-    therapy_focus = recommend_therapy_plan(module_scores_dict)
+    therapy_focus = recommend_therapy_plan_from_path(module_scores_dict, astar_path)
     scheduled_plan = schedule_therapies_csp(therapy_focus, rule["risk_band"])
 
     astar_therapy_nodes = [n for n in astar_path if n.startswith("therapy_")]
@@ -72,4 +73,5 @@ def run_screening(payload: AnalyzeRequest) -> AnalyzeResponse:
         module_scores=ModuleScores(**rule["module_scores"]),
         explanation=explanation,
         therapy_plan=scheduled_plan,
+        created_at=datetime.now(timezone.utc),
     )
