@@ -3,7 +3,7 @@
  */
 
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "https://autismind-ai-y8ol.onrender.com";
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export type RiskBand = "low" | "moderate" | "high";
 

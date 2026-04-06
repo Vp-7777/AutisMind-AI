@@ -269,7 +269,7 @@ export default function ResultsPage() {
   const inFlightRef = useRef(false);
   const searchParams = useSearchParams();
   const sessionFromQuery = searchParams.get("session");
-  const sessionId = sessionFromQuery || (typeof window !== "undefined" ? sessionStorage.getItem("session_id") : null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   const loadResults = async () => {
     if (inFlightRef.current) {
@@ -283,8 +283,9 @@ export default function ResultsPage() {
     try {
       if (!sessionId) {
         setError("no_data");
+        setIsLoading(false);
         return;
-      }
+    }
       const apiResults = await getResults(sessionId);
       setResults(normalizeScreeningResultForUi(apiResults));
     } catch (err) {
@@ -300,22 +301,44 @@ export default function ResultsPage() {
     }
   };
 
-  useEffect(() => {
+  // 🔵 1. Handle session safely (SSR-safe)
+useEffect(() => {
+  let id = sessionFromQuery;
+
+  if (typeof window !== "undefined") {
     if (sessionFromQuery) {
       sessionStorage.setItem("session_id", sessionFromQuery);
+      id = sessionFromQuery;
+    } else {
+      id = sessionStorage.getItem("session_id");
     }
+  }
+
+  setSessionId(id);
+}, [sessionFromQuery]);
+
+// 🔵 2. Fetch results ONLY after sessionId is set
+useEffect(() => {
+  if (sessionId) {
     loadResults();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionFromQuery]);
+  }
+}, [sessionId]);
 
-  useEffect(() => {
-    if (!results) return;
-    const id = window.setTimeout(() => setAnimatedRisk(results.risk_score), 80);
-    return () => window.clearTimeout(id);
-  }, [results]);
+// 🔵 3. Animate risk score (UI only)
+useEffect(() => {
+  if (!results) return;
 
-  const timeline = useMemo(() => normalizeTherapyPlan(results?.therapy_plan ?? []), [results?.therapy_plan]);
+  const timer = window.setTimeout(() => {
+    setAnimatedRisk(results.risk_score);
+  }, 80);
 
+  return () => window.clearTimeout(timer);
+}, [results]);
+
+// 🔵 4. Prepare therapy timeline (memoized)
+const timeline = useMemo(() => {
+  return normalizeTherapyPlan(results?.therapy_plan ?? []);
+}, [results?.therapy_plan]);
   // ==========================================================================
   // RENDER: Loading State
   // ==========================================================================

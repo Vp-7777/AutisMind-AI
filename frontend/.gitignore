@@ -68,3 +68,7 @@ Thumbs.db
 # =========================
 coverage/
 .cache/
+
+.env
+.env.local
+backend/.env
