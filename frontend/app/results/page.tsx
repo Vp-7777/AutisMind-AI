@@ -75,7 +75,17 @@ import {
 // TYPE DEFINITIONS
 // =============================================================================
 
-type ResultsData = ScreeningResult;
+interface DisplayModuleScores {
+  eye_contact: number;
+  response_to_name: number;
+  vocalization: number;
+  gestures: number;
+  repetitive_behavior: number;
+}
+
+type ResultsData = Omit<ScreeningResult, "module_scores"> & {
+  module_scores: DisplayModuleScores;
+};
 
 /**
  * Error types for different scenarios
@@ -461,7 +471,11 @@ const timeline = useMemo(() => {
 
       const pdfBytes = await pdfDoc.save();
       const fileName = `autiscreen-report-${results.session_id}.pdf`;
-      const blob = new Blob([pdfBytes], { type: "application/pdf" });
+      const pdfBuffer = pdfBytes.buffer.slice(
+        pdfBytes.byteOffset,
+        pdfBytes.byteOffset + pdfBytes.byteLength
+      ) as ArrayBuffer;
+      const blob = new Blob([pdfBuffer], { type: "application/pdf" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
       link.download = fileName;
