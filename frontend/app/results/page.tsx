@@ -41,6 +41,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { Header } from "@/components/layout/header";
 import { Footer } from "@/components/layout/footer";
 import { RiskBadge } from "@/components/results/risk-badge";
@@ -260,6 +261,7 @@ function ResultsPageContent() {
   /** Human-readable error message */
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [animatedRisk, setAnimatedRisk] = useState(0);
+  const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const inFlightRef = useRef(false);
   const searchParams = useSearchParams();
   const sessionFromQuery = searchParams.get("session");
@@ -333,6 +335,148 @@ useEffect(() => {
 const timeline = useMemo(() => {
   return normalizeTherapyPlan(results?.therapy_plan ?? []);
 }, [results?.therapy_plan]);
+
+  const buildShareUrl = () => {
+    if (!results) return "";
+    if (typeof window === "undefined") return "";
+    return `${window.location.origin}/results?session=${encodeURIComponent(results.session_id)}`;
+  };
+
+  const handleShareReport = async () => {
+    if (!results) return;
+    const shareUrl = buildShareUrl();
+    const shareTitle = `AutiScreen Report - Session ${results.session_id}`;
+    const shareText = `Risk: ${results.risk_score}% (${results.risk_band})`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: shareTitle,
+          text: shareText,
+          url: shareUrl,
+        });
+        return;
+      }
+      await navigator.clipboard.writeText(shareUrl);
+      window.alert("Report link copied to clipboard.");
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Unable to share this report.";
+      window.alert(message);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!results || isDownloadingPdf) return;
+    setIsDownloadingPdf(true);
+    try {
+      const pdfDoc = await PDFDocument.create();
+      const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+      const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+      const pageWidth = 595.28;
+      const pageHeight = 841.89;
+      const margin = 48;
+      const contentWidth = pageWidth - margin * 2;
+      let page = pdfDoc.addPage([pageWidth, pageHeight]);
+      let y = pageHeight - 56;
+
+      const ensureSpace = (minSpace = 20) => {
+        if (y - minSpace >= 48) return;
+        page = pdfDoc.addPage([pageWidth, pageHeight]);
+        y = pageHeight - 56;
+      };
+
+      const drawLine = (line: string, size = 11, bold = false) => {
+        ensureSpace(size + 6);
+        page.drawText(line, {
+          x: margin,
+          y,
+          size,
+          font: bold ? fontBold : fontRegular,
+          color: rgb(0.1, 0.1, 0.1),
+        });
+        y -= size + 5;
+      };
+
+      const wrapText = (text: string, size = 11) => {
+        const words = text.split(/\s+/).filter(Boolean);
+        const lines: string[] = [];
+        let current = "";
+        for (const word of words) {
+          const next = current ? `${current} ${word}` : word;
+          const width = fontRegular.widthOfTextAtSize(next, size);
+          if (width <= contentWidth) {
+            current = next;
+          } else {
+            if (current) lines.push(current);
+            current = word;
+          }
+        }
+        if (current) lines.push(current);
+        return lines;
+      };
+
+      const addBodyParagraph = (text: string, size = 11) => {
+        const lines = wrapText(text, size);
+        lines.forEach((line) => drawLine(line, size, false));
+      };
+
+      const addHeading = (text: string) => {
+        drawLine(text, 16, true);
+        y -= 2;
+      };
+
+      const printDate = new Date(results.created_at).toLocaleString();
+      drawLine("AutiScreen Assessment Report", 22, true);
+      y -= 2;
+      drawLine(`Session ID: ${results.session_id}`, 11);
+      drawLine(`Generated: ${printDate}`, 11);
+      drawLine(`Risk Score: ${results.risk_score}% (${results.risk_band})`, 11);
+      y -= 8;
+
+      addHeading("Module Breakdown");
+      drawLine(`Eye Contact: ${results.module_scores.eye_contact}/100`);
+      drawLine(`Response to Name: ${results.module_scores.response_to_name}/100`);
+      drawLine(`Vocalization: ${results.module_scores.vocalization}/100`);
+      drawLine(`Gestures & Pointing: ${results.module_scores.gestures}/100`);
+      drawLine(
+        `Repetitive Behaviors: ${results.module_scores.repetitive_behavior}/100`
+      );
+      y -= 8;
+
+      addHeading("Detailed Explanation");
+      addBodyParagraph(results.explanation);
+      y -= 8;
+
+      addHeading("Recommended Next Steps");
+      timeline.forEach((item, index) => {
+        addBodyParagraph(`${index + 1}. ${item.label}: ${item.detail}`);
+      });
+      y -= 12;
+
+      addBodyParagraph(
+        "Disclaimer: This screening tool is not a diagnostic instrument. Please consult qualified healthcare professionals for formal evaluation."
+      );
+
+      const pdfBytes = await pdfDoc.save();
+      const fileName = `autiscreen-report-${results.session_id}.pdf`;
+      const blob = new Blob([pdfBytes], { type: "application/pdf" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Unable to generate PDF report.";
+      window.alert(message);
+    } finally {
+      setIsDownloadingPdf(false);
+    }
+  };
   // ==========================================================================
   // RENDER: Loading State
   // ==========================================================================
@@ -428,11 +572,16 @@ const timeline = useMemo(() => {
             
             {/* Action Buttons */}
             <div className="flex gap-2">
-              <Button variant="outline" size="sm">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDownloadPdf}
+                disabled={isDownloadingPdf}
+              >
                 <Download className="mr-2 h-4 w-4" />
-                Download PDF
+                {isDownloadingPdf ? "Generating PDF..." : "Download PDF"}
               </Button>
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={handleShareReport}>
                 <Share2 className="mr-2 h-4 w-4" />
                 Share
               </Button>
