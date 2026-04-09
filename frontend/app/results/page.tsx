@@ -38,7 +38,7 @@
  * All fallback scoring is temporary for development purposes only.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Header } from "@/components/layout/header";
@@ -74,13 +74,7 @@ import {
 // TYPE DEFINITIONS
 // =============================================================================
 
-/**
- * Extended ScreeningResult for local use
- * Includes all fields from the API response
- */
-interface ResultsData extends ScreeningResult {
-  // All fields inherited from ScreeningResult
-}
+type ResultsData = ScreeningResult;
 
 /**
  * Error types for different scenarios
@@ -249,7 +243,7 @@ function normalizeTherapyPlan(plan: string[]): Array<{ label: string; detail: st
  * - error: Type of error if any occurred
  * - errorMessage: User-friendly error message
  */
-export default function ResultsPage() {
+function ResultsPageContent() {
   // ==========================================================================
   // STATE
   // ==========================================================================
@@ -614,5 +608,23 @@ const timeline = useMemo(() => {
 
       <Footer />
     </div>
+  );
+}
+
+export default function ResultsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen flex-col">
+          <Header />
+          <main className="flex-1 flex items-center justify-center">
+            <LoadingState message="Loading results..." />
+          </main>
+          <Footer />
+        </div>
+      }
+    >
+      <ResultsPageContent />
+    </Suspense>
   );
 }
