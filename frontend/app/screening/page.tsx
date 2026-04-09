@@ -381,7 +381,7 @@ export default function ScreeningPage() {
       // STEP 4: Navigate to results page
       // ========================================
       
-      router.push("/results");
+      router.push(`/results?session=${encodeURIComponent(result.session_id)}`);
       
     } catch (err) {
       // Handle any unexpected errors

@@ -41,13 +41,13 @@ SYMPTOM_NODES = (
 )
 
 
-def _build_symptom_graph(scores: dict[str, float], threshold: float = 4.0) -> dict[str, list[str]]:
+def _build_symptom_graph(scores: dict[str, float], threshold: float = 40.0) -> dict[str, list[str]]:
     """
     Build an undirected graph of "co-occurring low scores".
 
     Edge rule (simple, explainable):
-    Two symptoms share an edge if BOTH raw scores are strictly below `threshold`
-    on the 0–10 style scale.
+    Two symptoms share an edge if BOTH adjusted scores are strictly below `threshold`
+    on the 0–100 scale.
 
     This is a *screening abstraction*, not a medical diagnostic graph.
     """
@@ -83,8 +83,8 @@ def analyze_symptoms_bfs(
         "name_response": name_response,
         "vocalization": vocalization,
         "gestures": gestures,
-        # For repetitive behavior, "high" is concerning; invert for "strength" comparison.
-        "repetitive_behavior": 10.0 - repetitive_behavior,
+        # For repetitive behavior, "high" is concerning; invert to align with others.
+        "repetitive_behavior": 100.0 - repetitive_behavior,
     }
     graph = _build_symptom_graph(scores)
 

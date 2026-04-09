@@ -6,12 +6,14 @@ HTTP endpoints required by the project brief.
 """
 
 from fastapi import APIRouter, HTTPException
+import logging
 
 from database.mongodb import get_result, list_results, save_result
 from models.schemas import AnalyzeRequest, AnalyzeResponse, HistorySession
 from .screening_pipeline import run_screening
 
 router = APIRouter(tags=["screening"])
+logger = logging.getLogger(__name__)
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
@@ -25,7 +27,8 @@ def analyze_screening(payload: AnalyzeRequest) -> AnalyzeResponse:
     try:
         save_result(result.session_id, result.model_dump())
     except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        # Do not fail analysis if storage is transiently unavailable.
+        logger.exception("Result persistence failed for session_id=%s", result.session_id)
     return result
 
 
